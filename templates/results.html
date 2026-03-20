@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% block title %}Results — {{ udid[:8] }}{% endblock %}
+
+{% block content %}
+
+<!-- summary banner -->
+{% set res = result.result %}
+<div class="alert
+  {% if res == 'detected' %}alert-danger
+  {% elif res == 'clean'   %}alert-success
+  {% else                  %}alert-secondary
+  {% endif %} d-flex align-items-center gap-3 mb-3">
+  <i class="bi
+    {% if res == 'detected' %}bi-exclamation-triangle-fill fs-3
+    {% elif res == 'clean'  %}bi-shield-check fs-3
+    {% else                 %}bi-question-circle fs-3
+    {% endif %}"></i>
+  <div>
+    <strong>
+      {% if res == 'detected' %}⚠ IOCs detected — potential compromise indicators found.
+      {% elif res == 'clean'  %}✓ No IOC matches found.
+      {% else                 %}Analysis result unknown or incomplete.
+      {% endif %}
+    </strong>
+    <div class="small mt-1">
+      Device: <code>{{ udid }}</code> &nbsp;·&nbsp;
+      Modules run: {{ result.modules | length }} &nbsp;·&nbsp;
+      IOCs found: <strong>{{ result.iocs_found }}</strong>
+    </div>
+  </div>
+  <div class="ms-auto d-flex gap-2">
+    <a href="/device/{{ udid }}" class="btn btn-sm btn-outline-light">
+      <i class="bi bi-arrow-left me-1"></i>Back
+    </a>
+    <a href="/history/{{ udid }}" class="btn btn-sm btn-outline-light">
+      <i class="bi bi-clock-history me-1"></i>History
+    </a>
+  </div>
+</div>
+
+<!-- tabs: Detections / All modules / Timeline -->
+<ul class="nav nav-tabs mb-3" id="resultTabs">
+  <li class="nav-item">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-detected">
+      <i class="bi bi-exclamation-triangle me-1 text-danger"></i>
+      Detections
+      {% if result.iocs_found > 0 %}
+        <span class="badge bg-danger ms-1">{{ result.iocs_found }}</span>
+      {% endif %}
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-all">
+      <i class="bi bi-list-ul me-1"></i>All modules
+      <span class="badge bg-secondary ms-1">{{ result.modules | length }}</span>
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-timeline">
+      <i class="bi bi-calendar-event me-1"></i>Timeline
+      {% if timeline_total %}
+        <span class="badge bg-secondary ms-1">{{ timeline_total }}</span>
+      {% endif %}
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- DETECTIONS tab -->
+  <div class="tab-pane fade show active" id="tab-detected">
+    {% set detected_modules = result.modules | selectattr('count', 'gt', 0) | list %}
+    {% if detected_modules %}
+      {% for mod in detected_modules %}
+      <div class="card module-card has-iocs mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>
+            <i class="bi bi-bug-fill text-danger me-1"></i>
+            <code>{{ mod.name }}</code>
+          </span>
+          <span class="badge bg-danger">{{ mod.count }} match{{ 'es' if mod.count != 1 }}</span>
+        </div>
+        <div class="card-body p-2">
+          <div class="tbl-wrapper">
+            <table class="table table-sm table-dark table-borderless timeline-table mb-0">
+              <thead>
+                <tr>
+                  {% if mod.detected and mod.detected[0] is mapping %}
+                    {% for k in mod.detected[0].keys() %}
+                      <th>{{ k }}</th>
+                    {% endfor %}
+                  {% else %}
+                    <th>Value</th>
+                  {% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for entry in mod.detected %}
+                  <tr>
+                    {% if entry is mapping %}
+                      {% for v in entry.values() %}
+                        <td>{{ v }}</td>
+                      {% endfor %}
+                    {% else %}
+                      <td>{{ entry }}</td>
+                    {% endif %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="text-center py-5 text-secondary">
+        <i class="bi bi-shield-check" style="font-size:2.5rem;color:var(--mvt-green)"></i>
+        <p class="mt-2">No detections in any module.</p>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- ALL MODULES tab -->
+  <div class="tab-pane fade" id="tab-all">
+    <div class="mb-2">
+      <input type="text" class="form-control form-control-sm bg-dark text-white
+             border-secondary" placeholder="Filter modules…"
+             oninput="filterModules(this.value)">
+    </div>
+    <div id="all-modules-list">
+      {% for mod in result.modules %}
+      <div class="card module-card {{ 'has-iocs' if mod.count > 0 else 'clean' }} mb-2"
+           data-module="{{ mod.name }}">
+        <div class="card-header d-flex justify-content-between align-items-center
+                    py-2" style="cursor:pointer"
+             onclick="toggleModule('mod-{{ loop.index }}')">
+          <span>
+            {% if mod.count > 0 %}
+              <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>
+            {% else %}
+              <i class="bi bi-check-circle-fill text-success me-1"></i>
+            {% endif %}
+            <code>{{ mod.name }}</code>
+          </span>
+          <span>
+            {% if mod.count > 0 %}
+              <span class="badge bg-danger me-2">{{ mod.count }}</span>
+            {% endif %}
+            <i class="bi bi-chevron-down" id="chev-{{ loop.index }}"></i>
+          </span>
+        </div>
+        <div class="card-body p-0" id="mod-{{ loop.index }}" style="display:none">
+          {% if mod.detected %}
+          <div class="tbl-wrapper">
+            <table class="table table-sm table-dark table-borderless timeline-table mb-0">
+              <thead>
+                <tr>
+                  {% if mod.detected[0] is mapping %}
+                    {% for k in mod.detected[0].keys() %}<th>{{ k }}</th>{% endfor %}
+                  {% else %}
+                    <th>Value</th>
+                  {% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for entry in mod.detected %}
+                <tr>
+                  {% if entry is mapping %}
+                    {% for v in entry.values() %}<td>{{ v }}</td>{% endfor %}
+                  {% else %}
+                    <td>{{ entry }}</td>
+                  {% endif %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="small text-secondary p-2 mb-0">No detections in this module.</p>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- TIMELINE tab -->
+  <div class="tab-pane fade" id="tab-timeline">
+    {% if timeline %}
+    <div class="mb-2 d-flex gap-2 align-items-center">
+      <input type="text" class="form-control form-control-sm bg-dark text-white
+             border-secondary" id="timeline-filter"
+             placeholder="Filter timeline…"
+             oninput="filterTimeline(this.value)">
+      {% if timeline_total > 500 %}
+      <span class="text-secondary small text-nowrap">
+        Showing 500 of {{ timeline_total }} rows
+      </span>
+      {% endif %}
+    </div>
+    <div class="tbl-wrapper">
+      <table class="table table-sm table-dark table-hover table-borderless
+                    timeline-table mb-0" id="timeline-table">
+        <thead>
+          <tr>
+            {% for col in timeline[0].keys() %}
+              <th>{{ col }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody id="timeline-body">
+          {% for row in timeline %}
+          <tr>
+            {% for v in row.values() %}
+              <td>{{ v }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-secondary">
+      <i class="bi bi-calendar-x" style="font-size:2rem"></i>
+      <p class="mt-2">No timeline.csv found in MVT output.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleModule(id) {
+  const el   = document.getElementById(id);
+  const idx  = id.split('-')[1];
+  const chev = document.getElementById(`chev-${idx}`);
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'block';
+  chev.className = open ? 'bi bi-chevron-down' : 'bi bi-chevron-up';
+}
+
+function filterModules(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#all-modules-list .module-card').forEach(card => {
+    card.style.display =
+      card.dataset.module.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function filterTimeline(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#timeline-body tr').forEach(tr => {
+    tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

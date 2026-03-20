@@ -1,0 +1,415 @@
+{% extends "base.html" %}
+{% block title %}Device {{ udid[:8] }} — MVT Checker{% endblock %}
+
+{% block content %}
+
+<!-- step indicator -->
+<div class="step-indicator" id="steps">
+  <span class="step-pill {% if paired %}done{% else %}active{% endif %}" id="sp-pair">
+    <i class="bi bi-shield-lock me-1"></i>1 · Pair
+  </span>
+  <span class="step-pill" id="sp-info">
+    <i class="bi bi-info-circle me-1"></i>2 · Info
+  </span>
+  <span class="step-pill" id="sp-backup">
+    <i class="bi bi-archive me-1"></i>3 · Backup
+  </span>
+  <span class="step-pill" id="sp-mvt">
+    <i class="bi bi-bug me-1"></i>4 · Analyse
+  </span>
+  <span class="step-pill" id="sp-cleanup">
+    <i class="bi bi-trash me-1"></i>5 · Cleanup
+  </span>
+</div>
+
+<div class="row g-3">
+
+  <!-- COLUMN 1: device info + actions -->
+  <div class="col-lg-5">
+
+    <!-- Trust / Pair card -->
+    <div class="card mb-3" id="card-pair">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-shield-lock me-1"></i> Trust &amp; pair</span>
+        {% if paired %}
+          <span class="badge badge-clean"><i class="bi bi-check2 me-1"></i>Paired</span>
+        {% else %}
+          <span class="badge badge-error"><i class="bi bi-x me-1"></i>Not paired</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if not paired %}
+        <p class="small text-secondary mb-2">
+          Tap <strong class="text-white">Trust</strong> on the device,
+          then click Pair below.
+        </p>
+        {% endif %}
+        <div class="d-flex gap-2 align-items-center">
+          <button class="btn btn-sm btn-primary" id="btn-pair"
+                  onclick="doPair()" {% if paired %}disabled{% endif %}>
+            <i class="bi bi-shield-check me-1"></i>
+            {% if paired %}Already paired{% else %}Pair now{% endif %}
+          </button>
+          <span id="pair-msg" class="small text-secondary"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ideviceinfo card -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-phone me-1"></i> Device info</div>
+      <div class="card-body p-2">
+        {% if info and info.get('error') %}
+          <div class="alert alert-warning small py-1 mb-0">{{ info.error }}</div>
+        {% elif info %}
+          <table class="table table-sm table-borderless info-table mb-0">
+            <tbody>
+              {% set rows = [
+                ('Name',        info.get('device_name','')),
+                ('Model',       info.get('model','')),
+                ('Product',     info.get('product_type','')),
+                ('iOS',         info.get('ios_version','')),
+                ('Serial',      info.get('serial','')),
+                ('UDID',        udid),
+                ('CPU',         info.get('cpu_arch','')),
+                ('IMEI',        info.get('imei','')),
+                ('Phone',       info.get('phone_number','')),
+                ('Wi-Fi MAC',   info.get('wifi_mac','')),
+              ] %}
+              {% for label, val in rows %}
+                {% if val %}
+                  <tr>
+                    <td>{{ label }}</td>
+                    <td><code class="text-info">{{ val }}</code></td>
+                  </tr>
+                {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="small text-secondary mb-0">No info yet — device may need pairing.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- DB record / previous checks -->
+    {% if db_record %}
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-clock-history me-1"></i> Previous checks</div>
+      <div class="card-body small">
+        <div class="row g-2 text-center">
+          <div class="col-4">
+            <div class="text-secondary">Checks</div>
+            <div class="fw-bold text-white">{{ db_record.check_count }}</div>
+          </div>
+          <div class="col-4">
+            <div class="text-secondary">Last result</div>
+            <span class="badge badge-{{ db_record.last_result }}">
+              {{ db_record.last_result }}
+            </span>
+          </div>
+          <div class="col-4">
+            <div class="text-secondary">IOCs found</div>
+            <div class="fw-bold {% if db_record.iocs_found > 0 %}text-danger{% else %}text-success{% endif %}">
+              {{ db_record.iocs_found }}
+            </div>
+          </div>
+        </div>
+        <div class="text-secondary mt-2">
+          First seen: {{ db_record.first_seen[:16] }}<br>
+          Last seen:  {{ db_record.last_seen[:16] }}
+        </div>
+        <a href="/history/{{ udid }}" class="btn btn-sm btn-outline-secondary mt-2">
+          Full history
+        </a>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+  <!-- COLUMN 2: actions + log console -->
+  <div class="col-lg-7">
+
+    <!-- Backup card -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-archive me-1"></i> iOS backup</div>
+      <div class="card-body">
+        <div class="mb-2">
+          <label class="form-label small text-secondary mb-1">
+            Backup password (if device is encrypted)
+          </label>
+          <input type="password" class="form-control form-control-sm bg-dark text-white
+                 border-secondary" id="backup-password"
+                 placeholder="Leave blank if no password / use env var"
+                 {% if backup_password %}value="●●●●●●●● (from env)"{% endif %}>
+        </div>
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          <button class="btn btn-sm btn-primary" id="btn-backup" onclick="doBackup()">
+            <i class="bi bi-download me-1"></i>Start backup
+          </button>
+          <div class="flex-grow-1">
+            <div class="progress" id="backup-progress" style="display:none">
+              <div class="progress-bar progress-bar-striped progress-bar-animated
+                           bg-primary" id="backup-bar" style="width:0%">0%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MVT card -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-bug me-1"></i> MVT analysis</div>
+      <div class="card-body">
+        <div class="mb-2">
+          <label class="form-label small text-secondary mb-1">
+            Backup path (leave blank to use backup just taken)
+          </label>
+          <input type="text" class="form-control form-control-sm bg-dark text-white
+                 border-secondary" id="mvt-backup-path"
+                 placeholder="/media/django/data/mvt-backups/{{ udid }}">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small text-secondary mb-1">
+            Backup password (if encrypted)
+          </label>
+          <input type="password" class="form-control form-control-sm bg-dark text-white
+                 border-secondary" id="mvt-password"
+                 placeholder="Same as backup password">
+        </div>
+        <button class="btn btn-sm btn-warning text-dark" id="btn-mvt" onclick="doMvt()">
+          <i class="bi bi-search me-1"></i>Run MVT check
+        </button>
+        <span id="mvt-result-link" class="ms-2"></span>
+      </div>
+    </div>
+
+    <!-- Sysdiagnose + delete -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-tools me-1"></i> Extras</div>
+      <div class="card-body d-flex gap-2 flex-wrap">
+        <button class="btn btn-sm btn-outline-info" onclick="doSysdiagnose()">
+          <i class="bi bi-bug me-1"></i>Grab sysdiagnose
+        </button>
+        <span id="sysd-link" class="align-self-center"></span>
+        <div class="ms-auto">
+          <button class="btn btn-sm btn-outline-danger" onclick="doDelete()">
+            <i class="bi bi-trash me-1"></i>Delete backup &amp; analysis data
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Log console -->
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-terminal me-1"></i> Output log</span>
+        <button class="btn btn-sm btn-outline-secondary"
+                onclick="document.getElementById('log-console').innerHTML=''">
+          Clear
+        </button>
+      </div>
+      <div class="card-body p-0">
+        <div id="log-console"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const UDID = "{{ udid }}";
+let currentJobId = null;
+let currentEs    = null;
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+function appendLog(msg, level='info') {
+  const el = document.getElementById('log-console');
+  const d  = document.createElement('div');
+  d.className = `line-${level}`;
+  d.textContent = msg;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+function openStream(jobId) {
+  if (currentEs) currentEs.close();
+  currentJobId = jobId;
+  const es = new EventSource(`/stream/${jobId}`);
+  currentEs = es;
+  ['info','ok','warn','error','progress'].forEach(ev => {
+    es.addEventListener(ev, e => {
+      if (ev === 'progress') {
+        updateProgress(parseInt(e.data));
+      } else {
+        appendLog(e.data, ev);
+      }
+    });
+  });
+  es.addEventListener('done', () => { es.close(); currentEs = null; });
+  return es;
+}
+
+function updateProgress(pct) {
+  const bar = document.getElementById('backup-bar');
+  const wrap = document.getElementById('backup-progress');
+  wrap.style.display = 'block';
+  bar.style.width = pct + '%';
+  bar.textContent = pct + '%';
+}
+
+function setStepActive(id) {
+  document.querySelectorAll('.step-pill').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function setStepDone(id) {
+  const el = document.getElementById(id);
+  el.classList.remove('active');
+  el.classList.add('done');
+}
+
+function disableBtn(id, label='Running…') {
+  const btn = document.getElementById(id);
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>${label}`;
+}
+
+function enableBtn(id, html) {
+  const btn = document.getElementById(id);
+  btn.disabled = false;
+  btn.innerHTML = html;
+}
+
+// ── pair ──────────────────────────────────────────────────────────────────────
+
+async function doPair() {
+  setStepActive('sp-pair');
+  disableBtn('btn-pair', 'Pairing…');
+  appendLog('Attempting to pair device…');
+  const r = await fetch(`/api/pair/${UDID}`, {method:'POST'});
+  const d = await r.json();
+  appendLog(d.msg, d.ok ? 'ok' : 'error');
+  if (d.ok) {
+    setStepDone('sp-pair');
+    document.getElementById('btn-pair').disabled = true;
+    document.getElementById('btn-pair').textContent = '✓ Paired';
+    document.getElementById('pair-msg').textContent = 'Device trusted.';
+  } else {
+    enableBtn('btn-pair', '<i class="bi bi-shield-check me-1"></i>Retry pair');
+  }
+}
+
+// ── backup ────────────────────────────────────────────────────────────────────
+
+async function doBackup() {
+  setStepActive('sp-backup');
+  disableBtn('btn-backup', 'Backing up…');
+  appendLog('─── Starting iOS backup ───', 'info');
+  document.getElementById('backup-progress').style.display = 'block';
+
+  const pw = document.getElementById('backup-password').value;
+  const r  = await fetch(`/api/backup/${UDID}`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({password: pw.startsWith('●') ? '' : pw}),
+  });
+  const {job_id} = await r.json();
+  const es = openStream(job_id);
+
+  es.addEventListener('done', async () => {
+    const s = await fetch(`/api/job/${job_id}`).then(r=>r.json());
+    if (s.result.ok) {
+      setStepDone('sp-backup');
+      enableBtn('btn-backup', '<i class="bi bi-check2 me-1"></i>Backup done');
+    } else {
+      enableBtn('btn-backup', '<i class="bi bi-download me-1"></i>Retry backup');
+      appendLog('Backup may have failed. Check log.', 'warn');
+    }
+  });
+}
+
+// ── MVT ───────────────────────────────────────────────────────────────────────
+
+async function doMvt() {
+  setStepActive('sp-mvt');
+  disableBtn('btn-mvt', 'Analysing…');
+  appendLog('─── Starting MVT check-backup ───', 'info');
+  document.getElementById('mvt-result-link').innerHTML = '';
+
+  const pw   = document.getElementById('mvt-password').value;
+  const path = document.getElementById('mvt-backup-path').value;
+
+  const r = await fetch(`/api/mvt/${UDID}`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({password: pw, backup_path: path}),
+  });
+
+  if (!r.ok) {
+    const err = await r.json();
+    appendLog(err.error || 'Failed to start MVT.', 'error');
+    enableBtn('btn-mvt', '<i class="bi bi-search me-1"></i>Run MVT check');
+    return;
+  }
+
+  const {job_id, output_dir} = await r.json();
+  const es = openStream(job_id);
+
+  es.addEventListener('done', async () => {
+    const s = await fetch(`/api/job/${job_id}`).then(r=>r.json());
+    setStepDone('sp-mvt');
+    enableBtn('btn-mvt', '<i class="bi bi-search me-1"></i>Run again');
+    const res = s.result.result || 'unknown';
+    const enc = encodeURIComponent(output_dir.replace(/^\//, ''));
+    const link = `<a href="/results/${UDID}/${enc}"
+      class="btn btn-sm btn-outline-${res==='detected'?'danger':res==='clean'?'success':'secondary'}">
+      <i class="bi bi-bar-chart me-1"></i>View results
+      <span class="badge ms-1 badge-${res}">${res}</span>
+    </a>`;
+    document.getElementById('mvt-result-link').innerHTML = link;
+  });
+}
+
+// ── sysdiagnose ───────────────────────────────────────────────────────────────
+
+async function doSysdiagnose() {
+  appendLog('─── Grabbing sysdiagnose / crash reports ───', 'info');
+  const r = await fetch(`/api/sysdiagnose/${UDID}`, {method:'POST'});
+  const {job_id} = await r.json();
+  const es = openStream(job_id);
+  es.addEventListener('done', async () => {
+    const s = await fetch(`/api/job/${job_id}`).then(r=>r.json());
+    if (s.result.zip_path) {
+      document.getElementById('sysd-link').innerHTML =
+        `<a href="/download/sysdiagnose/${UDID}"
+            class="btn btn-sm btn-info text-dark">
+           <i class="bi bi-download me-1"></i>Download zip
+         </a>`;
+    }
+  });
+}
+
+// ── delete ────────────────────────────────────────────────────────────────────
+
+async function doDelete() {
+  if (!confirm(
+    'Delete all backup and analysis data for this device?\n\n' +
+    'The device history in the database will be KEPT.\n' +
+    'This cannot be undone.'
+  )) return;
+
+  setStepActive('sp-cleanup');
+  appendLog('─── Deleting backup and MVT output data ───', 'warn');
+  const r = await fetch(`/api/delete/${UDID}`, {method:'POST'});
+  const d = await r.json();
+  d.deleted.forEach(p => appendLog(`Deleted: ${p}`, 'warn'));
+  appendLog(d.note, 'ok');
+  setStepDone('sp-cleanup');
+}
+</script>
+{% endblock %}

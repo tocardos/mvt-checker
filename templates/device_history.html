@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ device.device_name or device.udid[:8] }} — History{% endblock %}
+
+{% block content %}
+<div class="d-flex gap-2 align-items-center mb-3">
+  <a href="/history" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>All devices
+  </a>
+  <a href="/device/{{ device.udid }}" class="btn btn-sm btn-outline-primary">
+    <i class="bi bi-phone me-1"></i>Inspect now
+  </a>
+  <h5 class="mb-0 ms-2">
+    {{ device.device_name or '?' }}
+    <code class="text-secondary fs-6 ms-2">{{ device.udid[:16] }}…</code>
+  </h5>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-sm-4">
+    <div class="card text-center p-3">
+      <div class="text-secondary small">Total checks</div>
+      <div class="fs-3 fw-bold text-white">{{ device.check_count }}</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card text-center p-3">
+      <div class="text-secondary small">Last result</div>
+      <div class="mt-1">
+        <span class="badge badge-{{ device.last_result }} fs-6">
+          {{ device.last_result }}
+        </span>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card text-center p-3">
+      <div class="text-secondary small">Total IOCs found</div>
+      <div class="fs-3 fw-bold {% if device.iocs_found > 0 %}text-danger{% else %}text-success{% endif %}">
+        {{ device.iocs_found }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><i class="bi bi-list-check me-1"></i> Check history</div>
+  <div class="card-body p-0">
+    {% if checks %}
+    <div class="table-responsive">
+      <table class="table table-sm table-dark table-borderless mb-0"
+             style="font-size:.82rem">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Started</th>
+            <th>Finished</th>
+            <th>Result</th>
+            <th class="text-center">IOCs</th>
+            <th>Modules</th>
+            <th>Backup path</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in checks %}
+          <tr>
+            <td class="text-secondary">{{ c.id }}</td>
+            <td>{{ c.started_at[:16] if c.started_at else '—' }}</td>
+            <td>{{ c.finished_at[:16] if c.finished_at else '…' }}</td>
+            <td>
+              <span class="badge badge-{{ c.result }}">{{ c.result }}</span>
+            </td>
+            <td class="text-center">
+              {% if c.iocs_found > 0 %}
+                <span class="badge bg-danger">{{ c.iocs_found }}</span>
+              {% else %}
+                <span class="text-secondary">0</span>
+              {% endif %}
+            </td>
+            <td class="text-secondary" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              {{ c.ioc_modules or '—' }}
+            </td>
+            <td class="text-secondary" style="font-size:.72rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              {{ c.backup_path or '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-4 text-secondary">No checks recorded yet.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

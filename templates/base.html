@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}MVT Checker{% endblock %}</title>
+  <!-->
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+-->
+  <link rel="stylesheet"
+        href="/static/css/bootstrap.min.css">
+  <link rel="stylesheet"
+        href="/static/css/bootstrap-icons.min.css">      
+  <style>
+    
+    :root {
+      --mvt-red:    #e63946;
+      --mvt-green:  #2dc653;
+      --mvt-amber:  #f4a261;
+      --mvt-dark:   #1a1a2e;
+      --mvt-panel:  #16213e;
+    }
+    body          { background: var(--mvt-dark); color: #e0e0e0; }
+    .navbar       { background: var(--mvt-panel) !important; border-bottom: 1px solid #2a2a4a; }
+    .navbar-brand { font-weight: 700; letter-spacing: .05em; color: #fff !important; }
+    .card         { background: var(--mvt-panel); border: 1px solid #2a2a4a; }
+    .card-header  { background: rgba(255,255,255,.04); border-bottom: 1px solid #2a2a4a; }
+    .badge-detected { background: var(--mvt-red);   color: #fff; }
+    .badge-clean    { background: var(--mvt-green); color: #fff; }
+    .badge-unknown  { background: #666;             color: #fff; }
+    .badge-error    { background: var(--mvt-amber); color: #1a1a1a; }
+
+    /* log console */
+    #log-console {
+      background: #0d0d1a;
+      color: #c8ffba;
+      font-family: 'Courier New', monospace;
+      font-size: .78rem;
+      height: 340px;
+      overflow-y: auto;
+      padding: .75rem 1rem;
+      border-radius: .375rem;
+      border: 1px solid #2a2a4a;
+    }
+    #log-console .line-error  { color: #ff6b6b; }
+    #log-console .line-warn   { color: var(--mvt-amber); }
+    #log-console .line-ok     { color: var(--mvt-green); }
+    #log-console .line-info   { color: #c8ffba; }
+
+    /* progress bar */
+    .progress { background: #0d0d1a; height: 1.4rem; }
+    .progress-bar { transition: width .4s ease; font-size: .75rem; }
+
+    /* step wizard */
+    .step-indicator { display: flex; gap: .5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    .step-pill {
+      padding: .3rem .9rem; border-radius: 999px; font-size: .8rem;
+      background: #2a2a4a; color: #888;
+    }
+    .step-pill.active  { background: #0d6efd; color: #fff; }
+    .step-pill.done    { background: var(--mvt-green); color: #fff; }
+
+    /* ideviceinfo table */
+    .info-table td:first-child { color: #888; width: 40%; font-size: .85rem; }
+    .info-table td:last-child  { font-size: .85rem; }
+
+    /* result cards */
+    .module-card.has-iocs { border-left: 3px solid var(--mvt-red); }
+    .module-card.clean    { border-left: 3px solid var(--mvt-green); }
+
+    /* timeline table */
+    .timeline-table { font-size: .78rem; }
+    .timeline-table th { position: sticky; top: 0; background: var(--mvt-panel); z-index: 1; }
+    .tbl-wrapper { max-height: 480px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-md">
+  <div class="container-fluid px-3">
+    <a class="navbar-brand" href="/">
+      <i class="bi bi-shield-check me-1 text-primary"></i> MVT Checker
+    </a>
+    <button class="navbar-toggler border-0" type="button"
+            data-bs-toggle="collapse" data-bs-target="#navMenu">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navMenu">
+      <ul class="navbar-nav ms-auto gap-1">
+        <li class="nav-item">
+          <a class="nav-link" href="/"><i class="bi bi-phone me-1"></i>Device</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/analyse"><i class="bi bi-folder-check me-1"></i>Analyse</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="/history"><i class="bi bi-clock-history me-1"></i>History</a>
+        </li>
+        <li class="nav-item">
+          <button class="btn btn-sm btn-outline-secondary ms-1"
+                  onclick="iocUpdate()">
+            <i class="bi bi-arrow-repeat me-1"></i>Update IOCs
+          </button>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid px-3 py-3">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }} alert-dismissible fade show py-2">
+        {{ msg }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</div>
+
+<!-- IOC update modal -->
+<div class="modal fade" id="iocModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content" style="background:var(--mvt-panel);border:1px solid #2a2a4a">
+      <div class="modal-header border-0">
+        <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>Updating IOCs</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="ioc-log" class="log-console" style="background:#0d0d1a;color:#c8ffba;font-family:monospace;font-size:.78rem;height:220px;overflow-y:auto;padding:.75rem;border-radius:.375rem;border:1px solid #2a2a4a"></div>
+      </div>
+      <div class="modal-footer border-0">
+        <span id="ioc-status" class="text-secondary small"></span>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function iocUpdate() {
+  const modal = new bootstrap.Modal(document.getElementById('iocModal'));
+  const logEl = document.getElementById('ioc-log');
+  const stat  = document.getElementById('ioc-status');
+  logEl.innerHTML = '';
+  stat.textContent = 'Starting …';
+  modal.show();
+
+  fetch('/api/ioc-update', {method:'POST'})
+    .then(r => r.json())
+    .then(({job_id}) => {
+      const es = new EventSource(`/stream/${job_id}`);
+      es.addEventListener('info',     e => appendLog(logEl, e.data, 'info'));
+      es.addEventListener('ok',       e => appendLog(logEl, e.data, 'ok'));
+      es.addEventListener('error',    e => appendLog(logEl, e.data, 'error'));
+      es.addEventListener('warn',     e => appendLog(logEl, e.data, 'warn'));
+      es.addEventListener('done',     () => { es.close(); stat.textContent = 'Done.'; });
+    });
+}
+
+function appendLog(el, msg, level='info') {
+  const d = document.createElement('div');
+  d.className = `line-${level}`;
+  d.textContent = msg;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

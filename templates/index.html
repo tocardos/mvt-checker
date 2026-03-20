@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}MVT Checker — Connect Device{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- LEFT: QR + connection instructions -->
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header">
+        <i class="bi bi-wifi me-1"></i> Connect to this Pi
+      </div>
+      <div class="card-body text-center">
+        <img src="/qr.png" class="img-fluid rounded mb-2"
+             style="max-width:200px" alt="QR code">
+        <p class="text-secondary small mb-1">
+          Scan with your phone to join <strong class="text-white">{{ ap_ssid }}</strong>
+          and open this app automatically.
+        </p>
+        <hr class="border-secondary">
+        <p class="text-secondary small mb-0">
+          Or browse to<br>
+          <code class="text-info">http://{{ ap_host }}:{{ ap_port }}/</code>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: detected devices -->
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-usb-plug me-1"></i> Connected devices</span>
+        <button class="btn btn-sm btn-outline-secondary"
+                onclick="location.reload()">
+          <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+      </div>
+      <div class="card-body">
+        {% if devices %}
+          <div class="list-group list-group-flush">
+          {% for udid in devices %}
+            <a href="/device/{{ udid }}"
+               class="list-group-item list-group-item-action d-flex
+                      justify-content-between align-items-center"
+               style="background:transparent;border-color:#2a2a4a;color:#e0e0e0">
+              <span>
+                <i class="bi bi-phone me-2 text-primary"></i>
+                <code class="text-info">{{ udid }}</code>
+              </span>
+              <span class="badge bg-primary">Inspect <i class="bi bi-chevron-right"></i></span>
+            </a>
+          {% endfor %}
+          </div>
+        {% else %}
+          <div class="text-center py-5 text-secondary">
+            <i class="bi bi-usb-plug" style="font-size:2.5rem"></i>
+            <p class="mt-2 mb-0">No iOS device detected.</p>
+            <p class="small">Connect via USB, then tap <em>Trust</em> on the device.</p>
+            <button class="btn btn-sm btn-outline-primary mt-2"
+                    onclick="location.reload()">
+              <i class="bi bi-arrow-clockwise me-1"></i>Retry
+            </button>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Instructions card -->
+    <div class="card mt-3">
+      <div class="card-header">
+        <i class="bi bi-info-circle me-1"></i> Quick start
+      </div>
+      <div class="card-body small text-secondary">
+        <ol class="mb-0 ps-3">
+          <li>Connect the iOS device via USB.</li>
+          <li>On the device, tap <strong class="text-white">Trust</strong> when prompted.</li>
+          <li>Click <strong class="text-white">Inspect</strong> on the detected UDID above.</li>
+          <li>Follow the wizard: <em>Pair → Backup → Analyse → Results</em>.</li>
+          <li>Delete backup data when done (device history is always kept).</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

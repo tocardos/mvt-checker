@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Analyse Existing Backup — MVT Checker{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-lg-7">
+
+  <div class="card mb-3">
+    <div class="card-header">
+      <i class="bi bi-folder-check me-1"></i> Analyse an existing backup
+    </div>
+    <div class="card-body">
+      <p class="small text-secondary mb-3">
+        Use this page to run MVT on a backup that already exists on the SSD
+        — no device connection needed.
+      </p>
+
+      <div class="mb-3">
+        <label class="form-label small text-secondary mb-1">
+          Backup path on SSD <span class="text-danger">*</span>
+        </label>
+        <input type="text" class="form-control form-control-sm bg-dark
+               text-white border-secondary" id="backup-path"
+               placeholder="/media/django/data/mvt-backups/&lt;udid&gt;">
+        <div class="form-text text-secondary">
+          Full path to the directory containing the Manifest.plist file.
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label small text-secondary mb-1">
+          Device UDID (optional — used to link result to device history)
+        </label>
+        <input type="text" class="form-control form-control-sm bg-dark
+               text-white border-secondary" id="udid-field"
+               placeholder="Leave blank if unknown">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label small text-secondary mb-1">
+          Backup password (if encrypted)
+        </label>
+        <input type="password" class="form-control form-control-sm bg-dark
+               text-white border-secondary" id="password-field">
+      </div>
+
+      <div class="d-flex gap-2 align-items-center">
+        <button class="btn btn-sm btn-warning text-dark"
+                id="btn-run" onclick="doAnalyse()">
+          <i class="bi bi-search me-1"></i>Run MVT check
+        </button>
+        <span id="result-link"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- log console -->
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span><i class="bi bi-terminal me-1"></i> Output log</span>
+      <button class="btn btn-sm btn-outline-secondary"
+              onclick="document.getElementById('log-console').innerHTML=''">
+        Clear
+      </button>
+    </div>
+    <div class="card-body p-0">
+      <div id="log-console"></div>
+    </div>
+  </div>
+
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function appendLog(msg, level='info') {
+  const el = document.getElementById('log-console');
+  const d  = document.createElement('div');
+  d.className = `line-${level}`;
+  d.textContent = msg;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function doAnalyse() {
+  const backupPath = document.getElementById('backup-path').value.trim();
+  if (!backupPath) {
+    appendLog('Please enter a backup path.', 'warn');
+    return;
+  }
+
+  const udid     = document.getElementById('udid-field').value.trim() || 'custom';
+  const password = document.getElementById('password-field').value;
+
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running…';
+  document.getElementById('result-link').innerHTML = '';
+  appendLog('─── Starting MVT check ───', 'info');
+
+  const r = await fetch(`/api/mvt/${encodeURIComponent(udid)}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({backup_path: backupPath, password: password}),
+  });
+
+  if (!r.ok) {
+    const err = await r.json();
+    appendLog(err.error || 'Failed to start analysis.', 'error');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-search me-1"></i>Run MVT check';
+    return;
+  }
+
+  const {job_id, output_dir} = await r.json();
+  const es = new EventSource(`/stream/${job_id}`);
+  ['info','ok','warn','error'].forEach(ev =>
+    es.addEventListener(ev, e => appendLog(e.data, ev))
+  );
+  es.addEventListener('done', async () => {
+    es.close();
+    const s   = await fetch(`/api/job/${job_id}`).then(r => r.json());
+    const res = s.result.result || 'unknown';
+    const enc = encodeURIComponent(output_dir.replace(/^\//, ''));
+    document.getElementById('result-link').innerHTML =
+      `<a href="/results/${encodeURIComponent(udid)}/${enc}"
+          class="btn btn-sm btn-outline-${res==='detected'?'danger':res==='clean'?'success':'secondary'}">
+         <i class="bi bi-bar-chart me-1"></i>View results
+         <span class="badge ms-1 badge-${res}">${res}</span>
+       </a>`;
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-search me-1"></i>Run MVT check';
+  });
+}
+</script>
+{% endblock %}

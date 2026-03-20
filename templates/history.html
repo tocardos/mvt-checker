@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Device History — MVT Checker{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-clock-history me-1"></i> All checked devices</span>
+    <span class="text-secondary small">{{ devices | length }} device(s) in DB</span>
+  </div>
+  <div class="card-body p-0">
+    {% if devices %}
+    <div class="table-responsive">
+      <table class="table table-sm table-dark table-hover table-borderless mb-0"
+             style="font-size:.83rem">
+        <thead style="position:sticky;top:0;background:var(--mvt-panel)">
+          <tr>
+            <th>Device</th>
+            <th>iOS</th>
+            <th>UDID</th>
+            <th class="text-center">Checks</th>
+            <th class="text-center">Last result</th>
+            <th class="text-center">IOCs</th>
+            <th>Last seen</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in devices %}
+          <tr>
+            <td>
+              <div class="fw-500">{{ d.device_name or '—' }}</div>
+              <div class="text-secondary" style="font-size:.75rem">{{ d.model or d.product_type or '' }}</div>
+            </td>
+            <td>{{ d.ios_version or '—' }}</td>
+            <td><code class="text-info" style="font-size:.75rem">{{ d.udid[:16] }}…</code></td>
+            <td class="text-center">{{ d.check_count }}</td>
+            <td class="text-center">
+              <span class="badge badge-{{ d.last_result }}">{{ d.last_result }}</span>
+            </td>
+            <td class="text-center">
+              {% if d.iocs_found > 0 %}
+                <span class="badge bg-danger">{{ d.iocs_found }}</span>
+              {% else %}
+                <span class="text-secondary">0</span>
+              {% endif %}
+            </td>
+            <td class="text-secondary" style="font-size:.75rem">
+              {{ d.last_seen[:16] if d.last_seen else '—' }}
+            </td>
+            <td>
+              <a href="/history/{{ d.udid }}"
+                 class="btn btn-sm btn-outline-secondary py-0">Detail</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5 text-secondary">
+      <i class="bi bi-database" style="font-size:2rem"></i>
+      <p class="mt-2">No devices checked yet.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
